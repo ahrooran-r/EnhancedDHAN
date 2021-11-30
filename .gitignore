@@ -5,3 +5,6 @@ target
 test
 .ipynb_checkpoints
 original
+./.idea
+Models/
+__pycache__/
