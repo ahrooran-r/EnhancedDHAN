@@ -4,15 +4,21 @@ import argparse
 import sys
 import time
 
+from tensorflow.python.util import deprecation
+
 from networks import *
 from utils import *
 
+deprecation._PRINT_DEPRECATION_WARNINGS = False
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--task", default="pre-trained", help="path to folder containing the model")
-parser.add_argument("--data_dir", default="./Dataset/ISTD_Dataset/", help="path to real dataset")
+parser.add_argument("--data_dir", default="./Dataset/ISTD_Dataset/", help="path to real Dataset")
 parser.add_argument("--save_model_freq", default=1, type=int, help="frequency to save model")
 parser.add_argument("--use_gpu", default=0, type=int, help="which gpu to use")
-parser.add_argument("--use_da", default=0.5, type=float, help="[0~1], the precentage of synthesized dataset")
+parser.add_argument("--use_da", default=0.5, type=float, help="[0~1], the precentage of synthesized Dataset")
 parser.add_argument("--is_hyper", default=1, type=int, help="use hypercolumn or not")
 parser.add_argument("--is_training", default=1, help="training or testing")
 parser.add_argument("--continue_training", action="store_true",
@@ -27,7 +33,9 @@ current_best = 65535
 maxepoch = 151
 EPS = 1e-12
 channel = 64  # number of feature channels to build the model, set to 64
-vgg_19_path = scipy.io.loadmat('./Models/imagenet-vgg-verydeep-19.mat')
+
+# vgg_19_path = scipy.io.loadmat('./Models/imagenet-vgg-verydeep-19.mat')
+vgg_19_path = './Models/imagenet-vgg-verydeep-19.mat'
 
 test_w, test_h = 640, 480
 
@@ -85,10 +93,13 @@ sess.run(tf.global_variables_initializer())
 ckpt = tf.train.get_checkpoint_state(task)
 print("[i] contain checkpoint: ", ckpt)
 
-if ckpt and continue_training:
+print(is_training)
+
+if continue_training and ckpt:
     saver_restore = tf.train.Saver([var for var in tf.trainable_variables()])
     print('loaded ' + ckpt.model_checkpoint_path)
     saver_restore.restore(sess, ckpt.model_checkpoint_path)
+
 # test doesn't need to load discriminator
 elif not is_training:
     saver_restore = tf.train.Saver([var for var in tf.trainable_variables() if 'discriminator' not in var.name])
@@ -98,12 +109,12 @@ elif not is_training:
 sys.stdout.flush()
 
 if is_training:
-    # please follow the dataset directory setup in README
+    # please follow the Dataset directory setup in README
     input_images_path = prepare_data(train_real_root, stage=['train_A'])  # no reflection ground truth for real images
     syn_images = prepare_data(train_real_root, stage=['synC'])
 
     print("[i] Total %d training images, first path of real image is %s." % (
-    len(input_images_path), input_images_path[0]))
+        len(input_images_path), input_images_path[0]))
 
     num_train = len(input_images_path) + len(syn_images)
     all_l = np.zeros(num_train, dtype=float)
