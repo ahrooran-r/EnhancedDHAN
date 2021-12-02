@@ -9,6 +9,8 @@ from tensorflow.python.util import deprecation
 from networks import *
 from utils import *
 
+os.environ['TF_CUDNN_WORKSPACE_LIMIT_IN_MB'] = '1000'
+
 deprecation._PRINT_DEPRECATION_WARNINGS = False
 tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
@@ -30,14 +32,17 @@ is_training = ARGS.is_training == 1
 continue_training = ARGS.continue_training
 hyper = ARGS.is_hyper == 1
 current_best = 65535
-maxepoch = 151
+# maxepoch = 151
+maxepoch = 20
 EPS = 1e-12
-channel = 64  # number of feature channels to build the model, set to 64
+# channel = 64  # number of feature channels to build the model, set to 64
+channel = 32
 
 # vgg_19_path = scipy.io.loadmat('./Models/imagenet-vgg-verydeep-19.mat')
 vgg_19_path = './Models/imagenet-vgg-verydeep-19.mat'
 
-test_w, test_h = 640, 480
+test_w, test_h = 576, 432
+train_w_upper_bound = 330
 
 if ARGS.use_gpu < 0:
     os.environ['CUDA_VISIBLE_DEVICES'] = ''
@@ -129,6 +134,7 @@ if is_training:
             continue
         cnt = 0
         for id in np.random.permutation(num_train):
+
             st = time.time()
             if input_images_ids[id] is None:
                 _id = id % len(input_images_path)
@@ -137,7 +143,8 @@ if is_training:
                 current_img_id = ''
 
                 inputimg = cv2.imread(input_images_path[_id], -1)
-                neww = np.random.randint(256, 480)  # w is the longer width[]
+
+                neww = np.random.randint(256, train_w_upper_bound)  # w is the longer width[]
                 newh = round((neww / inputimg.shape[1]) * inputimg.shape[0])
 
                 if magic < ARGS.use_da:  # choose from fake images
@@ -166,7 +173,8 @@ if is_training:
                 all_g[id] = current_g
                 g_mean = np.mean(all_g[np.where(all_g)])
 
-                if running_idx % 500 == 0:
+                # if running_idx % 500 == 0:
+                if running_idx % 10 == 0:
                     print("iter: %d %d || D: %.2f || G: %.2f %.2f || mean all: %.2f || percp: %.2f %.2f || time: %.2f" %
                           (epoch, cnt, current_d, current_g, g_mean,
                            np.mean(all_l[np.where(all_l)]),
@@ -190,6 +198,8 @@ if is_training:
         if epoch % ARGS.save_model_freq == 0:
             saver.save(sess, "%s/lasted_model.ckpt" % task)
             sys.stdout.flush()
+            tf.keras.backend.clear_session()
+
 else:
     subtask = task.replace('/', '_')  # if you want to save different testset separately
     stage = 'test_A'

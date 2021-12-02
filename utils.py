@@ -71,7 +71,7 @@ def parpare_image(val_path, sz=(640, 480), da=False, stage=['_M', '_T', '_B']):
     imtarget = encode_image(val_path.replace('_A', stage[1]), (imw, imh))
 
     gtmask = encode_image(val_path.replace('_A', stage[2]), (imw, imh))
-    gtmask = cv2.cvtColor(gtmask, cv2.COLOR_BGR2GRAY)
+    # gtmask = cv2.cvtColor(gtmask, cv2.COLOR_BGR2GRAY)
 
     if da:
         if np.random.random_sample() > 0.75:
