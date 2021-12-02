@@ -6,6 +6,7 @@ import time
 
 from networks import *
 from utils import *
+from train import *
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--task", default="pre-trained", help="path to folder containing the model")
@@ -52,23 +53,26 @@ with tf.variable_scope(tf.get_variable_scope()):
     # Perceptual Loss
     loss_percep = compute_percep_loss(shadow_free_image, target, vgg_19_path=vgg_19_path)
     # Adversarial Loss
-    with tf.variable_scope("discriminator"):
-        predict_real, pred_real_dict = build_discriminator(input, target)
-    with tf.variable_scope("discriminator", reuse=True):
-        predict_fake, pred_fake_dict = build_discriminator(input, shadow_free_image)
+   # with tf.variable_scope("discriminator"):
+    #predict_real, pred_real_dict = build_discriminator(input, target)
+    #with tf.variable_scope("discriminator", reuse=True):
+    #predict_fake, pred_fake_dict = build_discriminator(input, shadow_free_image)
 
-    d_loss = (tf.reduce_mean(-(tf.log(predict_real + EPS) + tf.log(1 - predict_fake + EPS)))) * 0.5
-    g_loss = tf.reduce_mean(-tf.log(predict_fake + EPS))
+    parser = get_parser().parse_args()
+    main(parser,predicted_mask)
 
-    loss = loss_percep * 0.2 + loss_mask
+    #d_loss = (tf.reduce_mean(-(tf.log(predict_real + EPS) + tf.log(1 - predict_fake + EPS)))) * 0.5
+    #g_loss = tf.reduce_mean(-tf.log(predict_fake + EPS))
+
+    #loss = loss_percep * 0.2 + loss_mask
 
 train_vars = tf.trainable_variables()
-d_vars = [var for var in train_vars if 'discriminator' in var.name]
-g_vars = [var for var in train_vars if 'g_' in var.name]
-g_opt = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(loss * 100 + g_loss,
-                                                              var_list=g_vars)  # optimizer for the generator
-d_opt = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(d_loss,
-                                                              var_list=d_vars)  # optimizer for the discriminator
+# d_vars = [var for var in train_vars if 'discriminator' in var.name]
+# g_vars = [var for var in train_vars if 'g_' in var.name]
+# g_opt = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(loss * 100 + g_loss,
+#                                                               var_list=g_vars)  # optimizer for the generator
+# d_opt = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(d_loss,
+#                                                               var_list=d_vars)  # optimizer for the discriminator
 
 for var in tf.trainable_variables():
     print("Listing trainable variables ... ")
@@ -140,27 +144,27 @@ if is_training:
                                                               stage=['_M', '_C', '_B'])
 
                 # alternate training, update discriminator every two iterations
-                if cnt % 2 == 0:
-                    fetch_list = [d_opt]
-                    # update D
-                    _ = sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
+                # if cnt % 2 == 0:
+                #     fetch_list = [d_opt]
+                #     # update D
+                #     _ = sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
 
-                # update G                
-                fetch_list = [g_opt, shadow_free_image, d_loss, g_loss, loss, loss_percep]
-                _, imoutput, current_d, current_g, current, current_percep = \
-                    sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
+                # # update G                
+                # fetch_list = [g_opt, shadow_free_image, d_loss, g_loss, loss, loss_percep]
+                # _, imoutput, current_d, current_g, current, current_percep = \
+                #     sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
 
-                all_l[id] = current
-                all_percep[id] = current_percep
-                all_g[id] = current_g
-                g_mean = np.mean(all_g[np.where(all_g)])
+                # all_l[id] = current
+                # all_percep[id] = current_percep
+                # all_g[id] = current_g
+                # g_mean = np.mean(all_g[np.where(all_g)])
 
                 if running_idx % 500 == 0:
-                    print("iter: %d %d || D: %.2f || G: %.2f %.2f || mean all: %.2f || percp: %.2f %.2f || time: %.2f" %
-                          (epoch, cnt, current_d, current_g, g_mean,
-                           np.mean(all_l[np.where(all_l)]),
-                           current_percep, np.mean(all_percep[np.where(all_percep)]),
-                           time.time() - st))
+                    # print("iter: %d %d || D: %.2f || G: %.2f %.2f || mean all: %.2f || percp: %.2f %.2f || time: %.2f" %
+                    #       (epoch, cnt, current_d, current_g, g_mean,
+                    #        np.mean(all_l[np.where(all_l)]),
+                    #        current_percep, np.mean(all_percep[np.where(all_percep)]),
+                    #        time.time() - st))
 
                     fileid = os.path.splitext(os.path.basename(input_images_path[_id]))[0]
                     imoutput = decode_image(imoutput)
