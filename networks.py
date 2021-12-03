@@ -112,7 +112,6 @@ def build_vgg19(input, vgg_path, reuse=False):
         net['pool5'] = build_net('pool', net['conv5_4'])
         return net
 
-
 def spp(net, channel=64, scope='g_pool'):
     # here we build the pooling stack
     net_2 = tf.layers.average_pooling2d(net, pool_size=4, strides=4, padding='same')
@@ -152,12 +151,13 @@ def agg(net, channel=64, scope='g_agg'):
 
 
 def build_aggasatt_joint(input, channel=64, vgg_19_path='None'):
+
     print("[i] Hypercolumn ON, building hypercolumn features ... ")
-    vgg19_features = build_vgg19(input[:, :, :, 0:3] * 255.0, vgg_19_path)
-    for layer_id in range(1, 6):
-        vgg19_f = vgg19_features['conv%d_2' % layer_id]
-        input = tf.concat([tf.image.resize_bilinear(vgg19_f, (tf.shape(input)[1], tf.shape(input)[2])) / 255.0, input],
-                          axis=3)
+    # vgg19_features = build_vgg19(input[:, :, :, 0:3] * 255.0, vgg_19_path)
+    # for layer_id in range(1, 6):
+    #     vgg19_f = vgg19_features['conv%d_2' % layer_id]
+    #     input = tf.concat([tf.image.resize_bilinear(vgg19_f, (tf.shape(input)[1], tf.shape(input)[2])) / 255.0, input],
+    #                       axis=3)
 
     sf = slim.conv2d(input, channel, [1, 1], rate=1, activation_fn=lrelu, normalizer_fn=nm,
                      weights_initializer=identity_initializer(), scope='g_sf')
