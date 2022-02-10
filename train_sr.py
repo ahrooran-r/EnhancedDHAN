@@ -4,16 +4,24 @@ import argparse
 import sys
 import time
 
+from tensorflow.python.util import deprecation
+
 from networks import *
-from utils import *
-from train import *
+from util import *
+import torch
+
+os.environ['TF_CUDNN_WORKSPACE_LIMIT_IN_MB'] = '1000'
+
+deprecation._PRINT_DEPRECATION_WARNINGS = False
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task", default="pre-trained", help="path to folder containing the model")
-parser.add_argument("--data_dir", default="./Dataset/ISTD_Dataset/", help="path to real dataset")
+parser.add_argument("--task", default="", help="path to folder containing the model")
+parser.add_argument("--data_dir", default="./Dataset/ISTD_Dataset/", help="path to real Dataset")
 parser.add_argument("--save_model_freq", default=1, type=int, help="frequency to save model")
 parser.add_argument("--use_gpu", default=0, type=int, help="which gpu to use")
-parser.add_argument("--use_da", default=0.5, type=float, help="[0~1], the precentage of synthesized dataset")
+parser.add_argument("--use_da", default=0.5, type=float, help="[0~1], the precentage of synthesized Dataset")
 parser.add_argument("--is_hyper", default=1, type=int, help="use hypercolumn or not")
 parser.add_argument("--is_training", default=1, help="training or testing")
 parser.add_argument("--continue_training", action="store_true",
@@ -25,19 +33,26 @@ is_training = ARGS.is_training == 1
 continue_training = ARGS.continue_training
 hyper = ARGS.is_hyper == 1
 current_best = 65535
-maxepoch = 151
+# maxepoch = 151
+maxepoch = 20
 EPS = 1e-12
-channel = 64  # number of feature channels to build the model, set to 64
-vgg_19_path = scipy.io.loadmat('./Models/imagenet-vgg-verydeep-19.mat')
+# channel = 64  # number of feature channels to build the model, set to 64
+channel = 32
 
-test_w, test_h = 640, 480
+# vgg_19_path = scipy.io.loadmat('./Models/imagenet-vgg-verydeep-19.mat')
+vgg_19_path = './Models/imagenet-vgg-verydeep-19.mat'
+
+test_w, test_h = 784, 560
+train_w_upper_bound = 330
 
 if ARGS.use_gpu < 0:
-    os.environ['CUDA_VISIBLE_DEVICES'] = ''
+    os.environ['CUDA_VISIBLE_DEVICES'] = [0,1]
 else:
     os.environ['CUDA_VISIBLE_DEVICES'] = str(ARGS.use_gpu)
 
 train_real_root = [ARGS.data_dir]
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5)
+
 
 # set up the model and define the graph
 with tf.variable_scope(tf.get_variable_scope()):
@@ -53,31 +68,54 @@ with tf.variable_scope(tf.get_variable_scope()):
     # Perceptual Loss
     loss_percep = compute_percep_loss(shadow_free_image, target, vgg_19_path=vgg_19_path)
     # Adversarial Loss
-   # with tf.variable_scope("discriminator"):
-    #predict_real, pred_real_dict = build_discriminator(input, target)
-    #with tf.variable_scope("discriminator", reuse=True):
-    #predict_fake, pred_fake_dict = build_discriminator(input, shadow_free_image)
+    with tf.variable_scope("discriminator1"):
+        
+        predict_real, pred_real_dict = build_discriminator(input, gtmask)
+        
+    with tf.variable_scope("discriminator1", reuse=True):
+        predict_fake, pred_fake_dict = build_discriminator(input, predicted_mask)
+      
+    
+    d_loss = (tf.reduce_mean(-(tf.log(predict_real + EPS) + tf.log(1 - predict_fake + EPS)))) * 0.5
+    g_loss = tf.reduce_mean(-tf.log(predict_fake + EPS))
 
-    parser = get_parser().parse_args()
-    main(parser,predicted_mask)
+    loss = loss_percep * 0.2 + loss_mask
+    
 
-    #d_loss = (tf.reduce_mean(-(tf.log(predict_real + EPS) + tf.log(1 - predict_fake + EPS)))) * 0.5
-    #g_loss = tf.reduce_mean(-tf.log(predict_fake + EPS))
+    # Adversarial Loss
+    with tf.variable_scope("discriminator2", reuse= tf.AUTO_REUSE):
+          
+        predict_real_,pred_real_dict_ = build_discriminator(input, gtmask , shadow_free_image = target )
+    with tf.variable_scope("discriminator2", reuse = tf.AUTO_REUSE):
+       
+        predict_fake_, pred_fake_dict_ = build_discriminator(input, predicted_mask, shadow_free_image = shadow_free_image )
 
-    #loss = loss_percep * 0.2 + loss_mask
+
+    d_loss_ = (tf.reduce_mean(-(tf.log(predict_real_ + EPS) + tf.log(1 - predict_fake_ + EPS)))) * 0.5
+    g_loss_ = tf.reduce_mean(-tf.log(predict_fake_ + EPS))
 
 train_vars = tf.trainable_variables()
-# d_vars = [var for var in train_vars if 'discriminator' in var.name]
-# g_vars = [var for var in train_vars if 'g_' in var.name]
-# g_opt = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(loss * 100 + g_loss,
-#                                                               var_list=g_vars)  # optimizer for the generator
-# d_opt = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(d_loss,
-#                                                               var_list=d_vars)  # optimizer for the discriminator
+d_vars = [var for var in train_vars if 'discriminator1' in var.name]
+g_vars = [var for var in train_vars if 'g_' in var.name]
+
+d_opt = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(d_loss ,
+                                                              var_list=d_vars)  # optimizer for the discriminator                                                            
+g_opt = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(loss * 100 + g_loss ,
+                                                              var_list=g_vars)  # optimizer for the generator
+        
+
+train_vars = tf.trainable_variables()
+d_vars = [var for var in train_vars if 'discriminator2' in var.name]
+g_vars = [var for var in train_vars if 'g_' in var.name]
+
+d_opt = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(d_loss_,
+                                                              var_list=d_vars)  # optimizer for the discriminator
+                                                            
+g_opt = tf.train.AdamOptimizer(learning_rate=0.0002).minimize(loss * 100 + g_loss_,var_list=g_vars) # optimizer for the generator
 
 for var in tf.trainable_variables():
     print("Listing trainable variables ... ")
     print(var)
-
 saver = tf.train.Saver(max_to_keep=None)
 
 if not os.path.isdir(task):
@@ -86,13 +124,17 @@ if not os.path.isdir(task):
 ######### Session #########
 sess = tf.Session()
 sess.run(tf.global_variables_initializer())
+
 ckpt = tf.train.get_checkpoint_state(task)
 print("[i] contain checkpoint: ", ckpt)
 
-if ckpt and continue_training:
+print(is_training)
+
+if continue_training and ckpt:
     saver_restore = tf.train.Saver([var for var in tf.trainable_variables()])
     print('loaded ' + ckpt.model_checkpoint_path)
     saver_restore.restore(sess, ckpt.model_checkpoint_path)
+
 # test doesn't need to load discriminator
 elif not is_training:
     saver_restore = tf.train.Saver([var for var in tf.trainable_variables() if 'discriminator' not in var.name])
@@ -102,12 +144,12 @@ elif not is_training:
 sys.stdout.flush()
 
 if is_training:
-    # please follow the dataset directory setup in README
+    # please follow the Dataset directory setup in README
     input_images_path = prepare_data(train_real_root, stage=['train_A'])  # no reflection ground truth for real images
     syn_images = prepare_data(train_real_root, stage=['synC'])
 
     print("[i] Total %d training images, first path of real image is %s." % (
-    len(input_images_path), input_images_path[0]))
+        len(input_images_path), input_images_path[0]))
 
     num_train = len(input_images_path) + len(syn_images)
     all_l = np.zeros(num_train, dtype=float)
@@ -122,6 +164,7 @@ if is_training:
             continue
         cnt = 0
         for id in np.random.permutation(num_train):
+
             st = time.time()
             if input_images_ids[id] is None:
                 _id = id % len(input_images_path)
@@ -130,7 +173,8 @@ if is_training:
                 current_img_id = ''
 
                 inputimg = cv2.imread(input_images_path[_id], -1)
-                neww = np.random.randint(256, 480)  # w is the longer width[]
+
+                neww = np.random.randint(256, train_w_upper_bound)  # w is the longer width[]
                 newh = round((neww / inputimg.shape[1]) * inputimg.shape[0])
 
                 if magic < ARGS.use_da:  # choose from fake images
@@ -144,27 +188,28 @@ if is_training:
                                                               stage=['_M', '_C', '_B'])
 
                 # alternate training, update discriminator every two iterations
-                # if cnt % 2 == 0:
-                #     fetch_list = [d_opt]
-                #     # update D
-                #     _ = sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
+                if cnt % 2 == 0:
+                    fetch_list = [d_opt]
+                    # update D
+                    _ = sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
+        
+                # update G                
+                fetch_list = [g_opt, shadow_free_image, d_loss_, g_loss_, loss, loss_percep]
+                _, imoutput, current_d, current_g, current, current_percep = \
+                    sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
 
-                # # update G                
-                # fetch_list = [g_opt, shadow_free_image, d_loss, g_loss, loss, loss_percep]
-                # _, imoutput, current_d, current_g, current, current_percep = \
-                #     sess.run(fetch_list, feed_dict={input: iminput, target: imtarget, gtmask: maskgt})
+                all_l[id] = current
+                all_percep[id] = current_percep
+                all_g[id] = current_g
+                g_mean = np.mean(all_g[np.where(all_g)])
 
-                # all_l[id] = current
-                # all_percep[id] = current_percep
-                # all_g[id] = current_g
-                # g_mean = np.mean(all_g[np.where(all_g)])
-
-                if running_idx % 500 == 0:
-                    # print("iter: %d %d || D: %.2f || G: %.2f %.2f || mean all: %.2f || percp: %.2f %.2f || time: %.2f" %
-                    #       (epoch, cnt, current_d, current_g, g_mean,
-                    #        np.mean(all_l[np.where(all_l)]),
-                    #        current_percep, np.mean(all_percep[np.where(all_percep)]),
-                    #        time.time() - st))
+                # if running_idx % 500 == 0:
+                if running_idx % 10 == 0:
+                    print("iter: %d %d || D: %.2f || G: %.2f %.2f || mean all: %.2f || percp: %.2f %.2f || time: %.2f" %
+                          (epoch, cnt, current_d, current_g, g_mean,
+                           np.mean(all_l[np.where(all_l)]),
+                           current_percep, np.mean(all_percep[np.where(all_percep)]),
+                           time.time() - st))
 
                     fileid = os.path.splitext(os.path.basename(input_images_path[_id]))[0]
                     imoutput = decode_image(imoutput)
@@ -183,6 +228,8 @@ if is_training:
         if epoch % ARGS.save_model_freq == 0:
             saver.save(sess, "%s/lasted_model.ckpt" % task)
             sys.stdout.flush()
+            tf.keras.backend.clear_session()
+
 else:
     subtask = task.replace('/', '_')  # if you want to save different testset separately
     stage = 'test_A'

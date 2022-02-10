@@ -112,7 +112,6 @@ def build_vgg19(input, vgg_path, reuse=False):
         net['pool5'] = build_net('pool', net['conv5_4'])
         return net
 
-
 def spp(net, channel=64, scope='g_pool'):
     # here we build the pooling stack
     net_2 = tf.layers.average_pooling2d(net, pool_size=4, strides=4, padding='same')
@@ -152,12 +151,13 @@ def agg(net, channel=64, scope='g_agg'):
 
 
 def build_aggasatt_joint(input, channel=64, vgg_19_path='None'):
+
     print("[i] Hypercolumn ON, building hypercolumn features ... ")
-    vgg19_features = build_vgg19(input[:, :, :, 0:3] * 255.0, vgg_19_path)
-    for layer_id in range(1, 6):
-        vgg19_f = vgg19_features['conv%d_2' % layer_id]
-        input = tf.concat([tf.image.resize_bilinear(vgg19_f, (tf.shape(input)[1], tf.shape(input)[2])) / 255.0, input],
-                          axis=3)
+    # vgg19_features = build_vgg19(input[:, :, :, 0:3] * 255.0, vgg_19_path)
+    # for layer_id in range(1, 6):
+    #     vgg19_f = vgg19_features['conv%d_2' % layer_id]
+    #     input = tf.concat([tf.image.resize_bilinear(vgg19_f, (tf.shape(input)[1], tf.shape(input)[2])) / 255.0, input],
+    #                       axis=3)
 
     sf = slim.conv2d(input, channel, [1, 1], rate=1, activation_fn=lrelu, normalizer_fn=nm,
                      weights_initializer=identity_initializer(), scope='g_sf')
@@ -218,6 +218,7 @@ def build_aggasatt_joint(input, channel=64, vgg_19_path='None'):
 def conv(batch_input, out_channels, stride):
     with tf.variable_scope("conv"):
         in_channels = batch_input.get_shape()[3]
+       
         filter = tf.get_variable("filter", [4, 4, in_channels, out_channels], dtype=tf.float32,
                                  initializer=tf.random_normal_initializer(0, 0.02))
         padded_input = tf.pad(batch_input, [[0, 0], [1, 1], [1, 1], [0, 0]], mode="CONSTANT")
@@ -246,17 +247,21 @@ def batchnorm(input):
         return normalized
 
 
-def build_discriminator(discrim_inputs, discrim_targets):
+def build_discriminator(discrim_inputs, discrim_targets="",shadow_free_image=""):
     n_layers = 3
     layers = []
     channel = 64
 
     # 2x [batch, height, width, in_channels] => [batch, height, width, in_channels * 2]
-    input = tf.concat([discrim_inputs, discrim_targets], axis=3)
-
+    if(shadow_free_image == ""):
+      input = tf.concat([discrim_inputs, discrim_targets], axis=3)
+    elif (shadow_free_image !=""):
+      input = tf.concat([discrim_inputs,shadow_free_image], axis=3)
     # layer_1: [batch, 256, 256, in_channels * 2] => [batch, 128, 128, ndf]
     with tf.variable_scope("layer_1"):
+        
         convolved = conv(input, channel, stride=2)
+        print(convolved)
         rectified = lreluX(convolved, 0.2)
         layers.append(rectified)
 
