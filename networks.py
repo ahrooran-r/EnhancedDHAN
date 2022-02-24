@@ -153,6 +153,7 @@ def agg(net, channel=64, scope='g_agg'):
 def build_aggasatt_joint(input, channel=64, vgg_19_path='None'):
 
     print("[i] Hypercolumn ON, building hypercolumn features ... ")
+    # <!---------------------------------------------------------------!> comment out next 5 lines
     # vgg19_features = build_vgg19(input[:, :, :, 0:3] * 255.0, vgg_19_path)
     # for layer_id in range(1, 6):
     #     vgg19_f = vgg19_features['conv%d_2' % layer_id]
